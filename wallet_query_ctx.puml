@@ -1,0 +1,40 @@
+@startuml
+
+title Jason's Vision of Sync Storage + Contexts
+
+participant App
+participant libindy
+participant Storage
+
+autonumber
+
+== Wallet Search ==
+note over libindy #f0f0f0
+Assumptions
+1. App creates as many "contexts" as it likes.
+2. Contexts are single-threaded and not thread-safe.
+   They do not share state. This means the singletons
+   inside libindy today are replaced with state held
+   by each context object.
+3. Existing wallet and encryption APIs are revised to
+   be synchronous. It's unclear whether dispatch thread
+   and command queue are still used for ledger.
+end note
+
+App -> libindy: query_handle = indy_wallet_search(ctx_handle,\n\t"{\n\t\t"plaintext.issue_date": {"$gte": "X1"},\n\t\t"plaintext.issue_date": {"$lte": "X2"},\n\t\t"issuer": {"$eq": "Y"},\n\t\t"holder_role": {"eq": "witness"}\n\t}");
+libindy -> libindy: encrypt query params
+note left: (block)
+libindy -> Storage: cursor =\n\tdo_wallet_search(ctx.wallet_handle,\n\t\tjson)
+note left: (block)
+Storage -> libindy: return cursor
+libindy -> App: return query handle
+loop
+App -> libindy: indy_wallet_fetch_next(query_handle)
+libindy -> libindy: decrypt data
+note left: (block)
+libindy -> App: return decrypted data
+end
+App -> libindy: indy_wallet_close_query(query_handle)
+note right #ffe0e0: Use callback instead, so libindy knows\nwhen caller is done with resources?
+libindy -> Storage: wallet_close_cursor(cursor)
+@enduml

@@ -1,0 +1,50 @@
+@startuml
+
+title Slava's Vision of Async Storage + Worker Threads
+
+participant App
+control "Dispatch Thread" as Dispatch
+participant "Command Queue" as Queue
+control "Worker Thread" as Worker
+participant Storage
+
+autonumber
+
+note over Dispatch, Worker #f0f0f0
+Assumptions
+1. Worker threads come from a pool provided by libindy
+2. Dispatch thread tries to return ASAP.
+3. All storage functions are async.
+4. All code shown here is pseudocode; generalities are
+   right but details may vary.
+end note
+
+App -> Dispatch: indy_sign_and_submit(cmd_handle,\n\twallet_handle, submitter_did,\n\trequest_json, callback)
+activate Dispatch
+Dispatch -> Queue: push cmd A\n(start submit);\nsignal cmd A
+Dispatch -> App: ACK / OK / no error
+deactivate Dispatch
+...
+Queue -> Worker: pop cmd A\n(start submit)
+activate Worker
+group detail suppressed
+Worker -> Storage: get private key for DID
+note left #ffe0e0: synchronous? If yes, worker thread\nis blocked. If not, push another cmd\nto queue and end this thread task.
+Storage -> Worker: return private key
+end
+group detail suppressed
+Worker -> Worker: sign
+note left #ffe0e0: synchronous? If yes, worker thread\nis blocked. If not, push another cmd\nto queue and end this thread task.
+end
+Worker -> Worker: send_tx()
+Worker -> Queue: push cmd B\n(invoke callback)
+deactivate Worker
+...
+Dispatch -> Dispatch: signal cmd B
+Queue -> Worker: pop cmd B\n(invoke callback)
+activate Worker
+Worker -> Worker: parse and validate response
+Worker -> App: invoke callback
+deactivate Worker
+
+@enduml

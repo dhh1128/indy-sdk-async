@@ -1,0 +1,43 @@
+@startuml
+
+title Jason's Vision of Sync Storage + Contexts
+
+participant App
+participant libindy
+participant Storage
+
+autonumber
+
+== Wallet Search ==
+note over libindy #f0f0f0
+Assumptions
+1. App creates as many "contexts" as it likes.
+2. Contexts are single-threaded and not thread-safe.
+   They do not share state. This means the singletons
+   inside libindy today are replaced with state held
+   by each context object.
+3. Existing wallet and encryption APIs are revised to
+   be synchronous. It's unclear whether dispatch thread
+   and command queue are still used for ledger.
+end note
+
+App -> libindy: indy_sign_and_submit(cmd_handle,\n\twallet_handle, submitter_did,\n\trequest_json, callback)
+activate libindy
+libindy -> Storage: get private key for DID
+note left: blocked
+Storage -> libindy: return private key
+libindy -> libindy: sign
+note left: blocked
+libindy -> libindy: send_tx()
+group detail suppressed
+libindy -> libindy: await response
+...
+libindy -> libindy: signal ends wait
+note left #ffe0e0: use dispatch thread? If no, ctx thread\nis blocked. If not, push another cmd\nto queue and end this thread task.
+end
+libindy -> libindy: parse and validate response
+libindy -> App: invoke callback
+libindy -> libindy: cleanup
+note left #ffe0e0: It's not clear how to manage resources\nwithout a callback. We could do a\nclose_command() or cleanup_command()\ninstead...
+deactivate libindy
+@enduml

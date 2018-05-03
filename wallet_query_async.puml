@@ -1,0 +1,56 @@
+@startuml
+
+title Slava's Vision of Async Storage + Worker Threads
+
+participant App
+control "Dispatch Thread" as Dispatch
+participant "Command Queue" as Queue
+control "Worker Thread" as Worker
+participant Storage
+
+autonumber
+
+== Wallet Search: Initial Call ==
+note over Dispatch, Worker #f0f0f0
+Assumptions
+1. Worker threads come from a pool provided by libindy
+2. Dispatch thread tries to return ASAP.
+3. All storage functions are async.
+4. All code shown here is pseudocode; generalities are
+   right but details may vary.
+end note
+
+App -> Dispatch: indy_wallet_search(cmd_handle, wallet_handle,\n\t"{\n\t\t"plaintext.issue_date": {"$gte": "X1"},\n\t\t"plaintext.issue_date": {"$lte": "X2"},\n\t\t"issuer": {"$eq": "Y"},\n\t\t"holder_role": {"eq": "witness"}\n\t}", app_callback);
+activate Dispatch
+Dispatch -> Queue: push cmd A,\nsignal cmd A
+Dispatch -> App: ACK / OK / no error
+deactivate Dispatch
+...
+== Wallet Search: Start Query ==
+Queue -> Worker: pop cmd A\n(start query)
+activate Worker
+Worker -> Worker: encrypt query params
+Worker -> Storage: query_handle =\n\tbegin_wallet_search(wallet_handle,\n\t\tjson, internal_callback)
+activate Storage
+Storage -> Queue: push cmd B\n(receive query results +\ninvoke app_callback);\ncmd_handle owned by B
+Storage -> Worker: ACK, return query_handle
+deactivate Worker
+deactivate Storage
+note over Queue, Storage #ffe0e0
+Most storage technologies have good async drivers. See http://bit.ly/2FBXngN.
+However, this will work poorly with sqlite, which implements async on a
+background thread.
+end note
+...
+Storage -> Dispatch: invoke internal_callback,\nsignal cmd B
+note left: (results start to arrive)
+...
+== Wallet Search: Receive Results ==
+Queue -> Worker: pop cmd B
+activate Worker
+Worker -> Worker: decrypt data
+Worker -> App: invoke app_callback
+Worker -> Worker: close cmd_handle
+Worker -> Storage: close query_handle
+deactivate Worker
+@enduml
